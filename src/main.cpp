@@ -2,7 +2,9 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <Adafruit_I2CDevice.h>
-#include <Adafruit_ST7789.h>
+#include <TFT_eSPI.h>
+#include "font/ZdyLwFont_20.h"
+
 const char *ssid = "wlan_wlan_wlan_0";
 const char *password = "wubo13264332849";
 const char *solarDataHost = "js.tkpdevops.com";
@@ -17,24 +19,46 @@ static const uint32_t MAX_INTERVAL = DELAY_1_MINUTE * 10;
 void setupWIFI();
 void setupTFT();
 void updateSolarData();
-void tftPrintText(int16_t x, int16_t y, uint16_t color, uint8_t fontSize, String text);
 void printHFRow(int16_t y, String band, String day, String night);
 void printVHFRow(int16_t y, String name, String status);
 uint16_t condColor(String cond);
 
-#define TFT_DC D1  // TFT DC  pin is connected to NodeMCU pin D1 (GPIO5)
-#define TFT_RST D0 // TFT RST pin is connected to NodeMCU pin D2 (GPIO4)
-#define TFT_CS D8  // TFT CS  pin is connected to NodeMCU pin D8 (GPIO15)
-#define MOSI D7
-#define CLK D5
+
+/*
+// Display SDO/MISO  to NodeMCU pin D6 (or leave disconnected if not reading TFT)
+// Display LED       to NodeMCU pin VIN (or 5V, see below)
+// Display SCK       to NodeMCU pin D5
+// Display SDI/MOSI  to NodeMCU pin D7
+// Display DC (RS/AO)to NodeMCU pin D3
+// Display RESET     to NodeMCU pin D4 (or RST, see below)
+// Display CS        to NodeMCU pin D8 (or GND, see below)
+// Display GND       to NodeMCU pin GND (0V)
+// Display VCC       to NodeMCU 5V or 3.3V
+
+
+#define TFT_CS   PIN_D8  // Chip select control pin D8
+#define TFT_DC   PIN_D3  // Data Command control pin
+#define TFT_RST  PIN_D4 
+*/
+
+// #define TFT_DC 0  // TFT DC  pin is connected to NodeMCU pin D1 (GPIO5)
+// #define TFT_RST 2 // TFT RST pin is connected to NodeMCU pin D2 (GPIO4)
+// #define TFT_CS -1  // TFT CS  pin is connected to NodeMCU pin D8 (GPIO15)
+// #define MOSI 13
+// #define CLK 14
 // initialize ST7789 TFT library with hardware SPI module
 // SCK (CLK) ---> NodeMCU pin D5 (GPIO14)
 // MOSI(DIN) ---> NodeMCU pin D7 (GPIO13)
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, CLK, TFT_RST);
+
+
+TFT_eSPI tft = TFT_eSPI(); // 引脚请自行配置tft_espi库中的 User_Setup.h文件
+TFT_eSprite clk = TFT_eSprite(&tft);
+#define LCD_BL_PIN 5 //LCD背光引脚
+uint16_t bgColor = 0x0000;
 
 void setup()
 {
-  
+  Serial.println("staring...");
   Serial.begin(9600);
   setupTFT();
   setupWIFI();
@@ -45,18 +69,28 @@ void loop()
   ESP.wdtFeed();
   updateSolarData();
   ESP.wdtFeed();
-  delay(DELAY_1_MINUTE*10);
+  delay(DELAY_1_MINUTE*1);
 }
 
 void setupTFT()
 {
-  tft.init(240, 240);
-  tft.fillScreen(ST77XX_BLACK);
+  tft.begin();                    // TFT init
+  tft.fillScreen(TFT_BLACK); 
+  clk.setColorDepth(8);
+  clk.loadFont(ZdyLwFont_20);
+
+  pinMode(LCD_BL_PIN, OUTPUT);
+  analogWrite(LCD_BL_PIN, 30);
 }
 
 void setupWIFI()
 {
-  tftPrintText(10,10,ST77XX_GREEN,3,F("Connecting..."));
+  clk.createSprite(220,20);       
+  clk.fillSprite(TFT_BLACK);       
+  clk.setTextColor(TFT_GREEN);    
+  clk.drawString(F("Connecting..."),0,0);
+  clk.pushSprite(10,10);
+  clk.deleteSprite();
   WiFi.begin(ssid, password);
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED)
@@ -67,9 +101,16 @@ void setupWIFI()
   }
 
   Serial.println("WiFi is ok, local ip:");
-  tftPrintText(10,50,ST77XX_GREEN,3,F("WiFi is ok, local ip:"));
-  tftPrintText(10,90,ST77XX_GREEN,3,WiFi.localIP().toString());
+  clk.createSprite(220,60);       
+  clk.fillSprite(TFT_BLACK);       
+  clk.setTextColor(TFT_GREEN);    
+  clk.drawString(F("WiFi is ok, local ip:"),0,0);
+  clk.drawString(WiFi.localIP().toString(),0,20);
+  clk.pushSprite(10,50);
+  clk.deleteSprite();
   // Serial.println(WiFi.localIP().toString());
+  // delay(2000);
+  // tft.fillScreen(TFT_BLACK);
 }
 
 void updateSolarData()
@@ -77,9 +118,9 @@ void updateSolarData()
 
 
   // tft.availableForWrite
-  tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(TFT_BLACK);
   // banner
-  tftPrintText(0, 0, ST77XX_WHITE, 3, "Band   D   N");
+  // tftPrintText(0, 0, ST77XX_WHITE, 3, "Band   D   N");
 
   WiFiClient wifiClient;
   HTTPClient http;
@@ -128,14 +169,14 @@ void updateSolarData()
 
       idx = rest.indexOf(",", 0);
       night = rest.substring(0, idx);
-      printHFRow(i * 30, band, day, night);
+      printHFRow(i, band, day, night);
       continue;
     }
 
     // skip Aurora
     if (i == 5)
     {
-      tft.drawFastHLine(0, 145, 240, ST77XX_WHITE);
+      // tft.drawFastHLine(0, 145, 240, TFT_WHITE);
       continue;
     }
 
@@ -148,61 +189,77 @@ void updateSolarData()
       idx = current.indexOf(",", 0);
       name = current.substring(0, idx);
       status = current.substring(idx + 1);
-      printVHFRow(150 + (i - 6) * 20, name, status);
+      printVHFRow(i, name, status);
       continue;
     }
   }
 
-  tft.drawFastHLine(0, 228, 240, ST77XX_WHITE);
-  tftPrintText(0, 230, ST77XX_BLUE, 1, updateTS);
+  // tft.drawFastHLine(0, 228, 240, TFT_WHITE)
+  clk.createSprite(220,20);       
+  clk.fillSprite(TFT_BLACK);       
+  clk.setTextColor(TFT_BLUE);    
+  clk.drawString(updateTS,0,0);
+  clk.pushSprite(10,220); 
+  clk.deleteSprite();
 }
 
 void printHFRow(int16_t y, String band, String day, String night)
 {
   Serial.printf("y:%d, band:%s, day:%s, night:%s\n", y, band.c_str(), day.c_str(), night.c_str());
   uint16_t dayColor = condColor(day);
-  uint16_t dayNight = condColor(night);
-  tftPrintText(0, y, ST77XX_WHITE, 3, band);
-  tftPrintText(125, y, dayColor, 3, day);
-  tftPrintText(200, y, dayNight, 3, night);
+  uint16_t nightColor = condColor(night);
+
+  clk.createSprite(220,20);       
+  clk.fillSprite(TFT_BLACK);       
+  clk.setTextColor(TFT_WHITE);    
+  clk.drawString(band,0,0);
+  clk.setTextColor(dayColor);  
+  clk.drawString(day,100,0);
+  clk.setTextColor(nightColor);  
+  clk.drawString(night,180,0);
+  clk.pushSprite(10,20*y+10); 
+  clk.deleteSprite();
+  // tftPrintText(0, y, TFT_WHITE, 3, band);
+  // tftPrintText(125, y, dayColor, 3, day);
+  // tftPrintText(200, y, dayNight, 3, night);
 }
 void printVHFRow(int16_t y, String name, String status)
 {
   Serial.printf("y:%d, name:%s, status:%s\n", y, name.c_str(), status.c_str());
-  uint16_t color = ST77XX_GREEN;
+  uint16_t color = TFT_GREEN;
   if (status == "Closed")
   {
-    color = ST77XX_RED;
+    color = TFT_RED;
   }
-
-  tftPrintText(0, y, ST77XX_WHITE, 2, name);
-  tftPrintText(125, y, color, 2, status);
+  clk.createSprite(220,20);       
+  clk.fillSprite(TFT_BLACK);    
+  clk.setTextColor(TFT_WHITE);    
+  clk.drawString(name,0,0);  
+  clk.setTextColor(color);  
+  clk.drawString(status,100,0);
+  clk.pushSprite(10,20*y+10); 
+  clk.deleteSprite();
+  // tftPrintText(0, y, TFT_WHITE, 2, name);
+  // tftPrintText(125, y, color, 2, status);
 }
 
-void tftPrintText(int16_t x, int16_t y, uint16_t color, uint8_t fontSize, String text)
-{
-  tft.setCursor(x, y);
-  tft.setTextColor(color);
-  tft.setTextSize(fontSize);
-  tft.println(text);
-}
 
 uint16_t condColor(String cond)
 {
   if (cond == "G")
   {
-    return ST77XX_GREEN;
+    return TFT_GREEN;
   }
   else if (cond == "F")
   {
-    return ST77XX_YELLOW;
+    return TFT_YELLOW;
   }
   else if (cond == "P")
   {
-    return ST77XX_RED;
+    return TFT_RED;
   }
   else
   {
-    return ST77XX_WHITE;
+    return TFT_WHITE;
   }
 }

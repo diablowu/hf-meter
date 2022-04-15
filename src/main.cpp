@@ -5,8 +5,8 @@
 #include <TFT_eSPI.h>
 #include "font/ZdyLwFont_20.h"
 
-const char *ssid = "wlan_wlan_wlan_0";
-const char *password = "wubo13264332849";
+const char *ssid = "<ssid>";
+const char *password = "<passcode>";
 const char *solarDataHost = "js.tkpdevops.com";
 const char *solarDataPath = "/solar-data.txt";
 
